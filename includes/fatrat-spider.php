@@ -151,6 +151,209 @@ class FRC_Spider
         return $this->response(FRC_ApiError::SUCCESS, $articles, '列表采集完成');
     }
 
+    /**
+     * API列表采集
+     * @return array
+     */
+    public function grab_api_list_page()
+    {
+        $option_id = frc_sanitize_text('option_id', 0);
+
+        $options = new FRC_Options();
+        $option = $options->option($option_id);
+        if (!$option) {
+            return ['code' => FRC_ApiError::FAIL, 'msg' => '未查询到配置, 配置ID错误'];
+        }
+
+        $apiUrl = $option['collect_list_url'];
+        $jsonPath = $option['collect_list_range'];
+        $rulesStr = $option['collect_list_rules'];
+        
+        $urlField = $this->parseRulesForApi($rulesStr);
+
+        $client = new \GuzzleHttp\Client([
+            'timeout' => 30,
+            'verify' => false,
+            'headers' => [
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',
+                'Accept' => 'application/json'
+            ]
+        ]);
+
+        if (!empty($option['collect_cookie'])) {
+            $client = new \GuzzleHttp\Client([
+                'timeout' => 30,
+                'verify' => false,
+                'headers' => [
+                    'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',
+                    'Cookie' => $option['collect_cookie'],
+                    'Accept' => 'application/json'
+                ]
+            ]);
+        }
+
+        try {
+            $response = $client->get($apiUrl);
+            $statusCode = $response->getStatusCode();
+            if ($statusCode != 200) {
+                return ['code' => FRC_ApiError::FAIL, 'msg' => 'API请求失败，HTTP状态码: ' . $statusCode];
+            }
+
+            $responseBody = (string)$response->getBody();
+            $jsonData = json_decode($responseBody, true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $preview = mb_substr($responseBody, 0, 500);
+                return ['code' => FRC_ApiError::FAIL, 'msg' => 'JSON解析失败。响应预览: ' . htmlspecialchars($preview)];
+            }
+
+            if (empty($jsonData)) {
+                return ['code' => FRC_ApiError::FAIL, 'msg' => 'API返回数据为空'];
+            }
+
+            $urls = $this->extractUrlsFromJson($jsonData, $jsonPath, $urlField);
+            if (empty($urls)) {
+                $jsonPreview = json_encode($jsonData, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+                $jsonPreview = mb_substr($jsonPreview, 0, 1000);
+                return ['code' => FRC_ApiError::FAIL, 'msg' => '未从API响应中提取到URL。请检查JSON路径和URL字段配置。当前JSON路径: ' . $jsonPath . ', URL字段: ' . $urlField . '。API响应预览: ' . htmlspecialchars($jsonPreview)];
+            }
+
+            $config = new stdClass();
+            $config->rendering = $option['collect_rendering'];
+            $config->remove_head = $option['collect_remove_head'];
+            $config->image_download = $option['collect_image_download'];
+            $config->image_path = $option['collect_image_path'];
+            $config->src = $option['collect_image_attribute'];
+            isset($option["collect_cookie"]) && $config->cookie = $option["collect_cookie"];
+
+            $articles = collect($urls)->map(function($url) use ($option, $config) {
+                if ($this->checkPostLink($url)) {
+                    return $this->format(['link' => $url], '数据已滤重，采集跳过');
+                }
+
+                $config->url = $url;
+                $config->range = $option['collect_content_range'];
+                $config->rules = $this->rulesFormat($option['collect_content_rules']);
+                $detail = $this->fetch_detail_with_meta($config, true);
+                $detail['link'] = $url;
+                return $this->insert_article($detail, $option);
+            })->toArray();
+
+            return $this->response(FRC_ApiError::SUCCESS, $articles, 'API列表采集完成');
+
+        } catch (\GuzzleHttp\Exception\GuzzleException $e) {
+            return ['code' => FRC_ApiError::FAIL, 'msg' => 'API请求异常: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * 从JSON数据中提取URL列表
+     * @param $jsonData
+     * @param $jsonPath
+     * @param $urlField
+     * @return array
+     */
+    private function extractUrlsFromJson($jsonData, $jsonPath, $urlField)
+    {
+        $data = $jsonData;
+
+        if (empty($jsonPath)) {
+            if (is_array($jsonData)) {
+                $data = $jsonData;
+            } else {
+                return [];
+            }
+        } else {
+            $pathParts = explode('.', $jsonPath);
+            foreach ($pathParts as $part) {
+                $part = trim($part);
+                
+                if (preg_match('/^(\w+)\[(\d+)\]$/', $part, $matches)) {
+                    $key = $matches[1];
+                    $index = (int)$matches[2];
+                    if (isset($data[$key]) && is_array($data[$key]) && isset($data[$key][$index])) {
+                        $data = $data[$key][$index];
+                    } else {
+                        return [];
+                    }
+                } else {
+                    if (isset($data[$part])) {
+                        $data = $data[$part];
+                    } else {
+                        return [];
+                    }
+                }
+            }
+        }
+
+        if (!is_array($data)) {
+            return [];
+        }
+
+        $urls = [];
+        foreach ($data as $item) {
+            if (!is_array($item) && !is_object($item)) {
+                continue;
+            }
+            
+            if (is_object($item)) {
+                $item = (array)$item;
+            }
+            
+            if (isset($item[$urlField])) {
+                $url = $item[$urlField];
+                $url = trim($url);
+                
+                if (!empty($url)) {
+                    if (filter_var($url, FILTER_VALIDATE_URL)) {
+                        $urls[] = $url;
+                    } elseif (strpos($url, 'http') === 0) {
+                        $urls[] = $url;
+                    } elseif (strpos($url, '/') === 0) {
+                        $urls[] = $url;
+                    }
+                }
+            }
+        }
+
+        return $urls;
+    }
+
+    /**
+     * 解析API列表采集的规则，获取字段名
+     * 支持格式: link%url 或 url 或 link%url|null|null
+     * @param $rules
+     * @return string
+     */
+    private function parseRulesForApi($rules)
+    {
+        if (empty($rules)) {
+            return '';
+        }
+        
+        $rules = trim($rules);
+        
+        $parts = explode(')(', $rules);
+        foreach ($parts as $part) {
+            $part = trim($part);
+            $segments = explode('|', $part);
+            $fieldName = trim($segments[0]);
+            
+            if (strpos($fieldName, '%') !== false) {
+                $fieldParts = explode('%', $fieldName);
+                if (count($fieldParts) >= 2) {
+                    return trim($fieldParts[1]);
+                }
+            }
+            
+            if (preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $fieldName)) {
+                return $fieldName;
+            }
+        }
+        
+        return $rules;
+    }
+
 
     /**
      * 历史(分页)页面
@@ -1128,6 +1331,7 @@ function frc_spider()
                 <button class="nav-link" data-bs-toggle="tab" data-bs-target="#single_js" type="button">简书爬虫</button>
                 <button class="nav-link" data-bs-toggle="tab" data-bs-target="#single_zh" type="button">知乎采集</button>
                 <button class="nav-link" data-bs-toggle="tab" data-bs-target="#list" type="button">列表采集</button>
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#api_list" type="button">API列表采集</button>
                 <button class="nav-link" data-bs-toggle="tab" data-bs-target="#historypage" type="button">列表分页采集</button>
                 <button class="nav-link" data-bs-toggle="tab" data-bs-target="#details" type="button">详情采集</button>
                 <?php if (get_option(FRC_Validation::FRC_VALIDATION_ALL_COLLECT)){ ?>
@@ -1215,6 +1419,32 @@ function frc_spider()
                     }
                     ?>
                     <!-- bootstrap进度条 -->
+                    <p></p>
+                    <?php _e((new FRC_Validation())->getAppreciatesHtml(7)); ?>
+                </ul>
+                <?php } ?>
+            </div>
+            <!--API列表爬虫-->
+            <div class="tab-pane fade spider-tab-content" id="api_list">
+                <?php
+                if (!isset($options['api'])) {
+                    _e('<p></p>');
+                    _e("<h4><a href='". admin_url('admin.php?page=frc-options') ."'>亲爱的皮皮虾: 目前没有任何一个API列表配置。皮皮虾我们走 </a></h4>");
+                } else {
+                ?>
+                <ul class="list-group">
+                    <p></p>
+                    <a disabled class="list-group-item active">
+                        <h5 class="list-group-item-heading">
+                            API列表爬虫(点击采集)
+                        </h5>
+                    </a>
+                    <p></p>
+                    <?php
+                    foreach ($options['api'] as $option) {
+                        _e("<a href='javascript:;' data-id='{$option['id']}' class='api-list-spider-run-button list-group-item'>{$option['collect_name']}</a>");
+                    }
+                    ?>
                     <p></p>
                     <?php _e((new FRC_Validation())->getAppreciatesHtml(7)); ?>
                 </ul>

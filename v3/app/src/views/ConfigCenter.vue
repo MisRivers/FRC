@@ -86,15 +86,15 @@ import ConfigFormModal from '../components/ConfigFormModal.vue'
 const { t } = useI18n()
 
 const configs = ref([])
-const stats = ref({ total: 0, list: 0, single: 0, all: 0 })
+const stats = ref({ total: 0, list: 0, api: 0, single: 0, all: 0 })
 const loading = ref(false); const page = ref(1); const perPage = ref(10)
 const total = ref(0); const totalPages = ref(0)
 const searchQuery = ref(''); const showForm = ref(false); const editingConfig = ref(null)
 let searchTimer = null
 
 // URL tab value → internal activeType mapping
-const configTabMap = { 'all': '', 'list': 'list', 'single': 'single', 'allsite': 'all' }
-const configTabReverseMap = { '': 'all', 'list': 'list', 'single': 'single', 'all': 'allsite' }
+const configTabMap = { 'all': '', 'list': 'list', 'api': 'api', 'single': 'single', 'allsite': 'all' }
+const configTabReverseMap = { '': 'all', 'list': 'list', 'api': 'api', 'single': 'single', 'all': 'allsite' }
 
 function getTabFromUrl() {
   return new URLSearchParams(location.search).get('tab') || 'all'
@@ -121,16 +121,18 @@ onActivated(() => {
 const statCards = [
   { key: 'total', labelKey: 'allConfig', color: '#4f46e5' },
   { key: 'list', labelKey: 'listConfig', color: '#059669' },
+  { key: 'api', labelKey: 'apiConfig', color: '#f59e0b' },
   { key: 'single', labelKey: 'singleConfig', color: '#2563eb' },
   { key: 'all', labelKey: 'allSiteConfig', color: '#7c3aed' },
 ]
 const typeTabs = [
   { labelKey: 'config.allConfig', value: '' },
   { labelKey: 'config.listConfig', value: 'list' },
+  { labelKey: 'config.apiConfig', value: 'api' },
   { labelKey: 'config.singleConfig', value: 'single' },
   { labelKey: 'config.allSiteConfig', value: 'all' },
 ]
-function tagType(t) { return { list:'success', single:'', all:'warning' }[t]||'' }
+function tagType(t) { return { list:'success', api:'warning', single:'', all:'warning' }[t]||'' }
 function tabCount(v) { return v==='' ? stats.value.total : (stats.value[v]||0) }
 function formatDate(d) { return d ? d.replace('T',' ').substring(0,16) : '—' }
 function truncateUrl(u) { return u && u.length > 30 ? u.substring(0,30)+'…' : u||'—' }

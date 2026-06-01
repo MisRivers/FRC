@@ -21,10 +21,20 @@
           <!-- 列表采集 -->
           <template v-if="tab.id === 'list'">
             <el-select v-model="listOptionId" :placeholder="$t('collect.selectConfig')" style="width:320px;margin-right:12px"><!-- 选择配置 -->
-              <el-option v-for="c in configOptions" :key="c.id" :label="c.collect_name" :value="c.id" />
+              <el-option v-for="c in configOptions.filter(o => o.collect_type === 'list')" :key="c.id" :label="c.collect_name" :value="c.id" />
             </el-select>
             <el-button type="primary" :loading="running === 'list'" :disabled="!listOptionId" @click="runCollect('list', { option_id: listOptionId })">
               {{ running === 'list' ? $t('collect.running') : $t('collect.list') }}<!-- 采集中... / 列表采集 -->
+            </el-button>
+          </template>
+
+          <!-- API列表采集 -->
+          <template v-if="tab.id === 'api-list'">
+            <el-select v-model="apiOptionId" :placeholder="$t('collect.selectConfig')" style="width:320px;margin-right:12px"><!-- 选择配置 -->
+              <el-option v-for="c in configOptions.filter(o => o.collect_type === 'api')" :key="c.id" :label="c.collect_name" :value="c.id" />
+            </el-select>
+            <el-button type="primary" :loading="running === 'api-list'" :disabled="!apiOptionId" @click="runCollect('api-list', { option_id: apiOptionId })">
+              {{ running === 'api-list' ? $t('collect.running') : $t('collect.apiList') }}<!-- 采集中... / API列表采集 -->
             </el-button>
           </template>
 
@@ -145,7 +155,7 @@ import { ref, reactive, computed, onMounted, onActivated, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { getConfigs } from '../api/config.js'
-import { collectCustom, collectList, collectDetail, collectHistory, collectAll, collectWechatHistory } from '../api/collect.js'
+import { collectCustom, collectList, collectApiList, collectDetail, collectHistory, collectAll, collectWechatHistory } from '../api/collect.js'
 
 const { t } = useI18n()
 
@@ -154,13 +164,14 @@ const tabs = computed(() => [
   { id: 'jianshu', name: t('collect.jianshu'), input: 'urls', desc: t('collect.jianshuDesc'), placeholder: 'https://www.jianshu.com/p/xxxxx', collect: 'js' }, // 简书采集 / 粘贴简书文章链接
   { id: 'zhihu', name: t('collect.zhihu'), input: 'urls', desc: t('collect.zhihuDesc'), placeholder: 'https://www.zhihu.com/question/xxxxx', collect: 'zh' }, // 知乎采集 / 粘贴知乎回答链接
   { id: 'list', name: t('collect.list'), input: null, desc: t('collect.listDesc') }, // 列表采集 / 选择一个配置，从列表页批量采集所有详情
+  { id: 'api-list', name: t('collect.apiList'), input: null, desc: t('collect.apiListDesc') }, // API列表采集 / 通过API接口获取URL列表进行批量采集
   { id: 'history', name: t('collect.history'), input: null, desc: t('collect.historyDesc') }, // 分页采集 / 自动翻页批量抓取，支持 {page} 占位符
   { id: 'detail', name: t('collect.detail'), input: 'detail', desc: t('collect.detailDesc') }, // 详情采集 / 手动输入链接 + 选择配置规则
   { id: 'all', name: t('collect.all'), input: null, desc: t('collect.allDesc') }, // 全站采集 / 从网站首页匹配所有链接进行采集
   { id: 'wechat-history', name: t('collect.wechatHistory'), input: null, desc: t('collect.wechatHistoryDesc') }, // 公众号历史 / 采集微信公众号历史文章列表
 ])
 
-const collectTabIds = ['wechat', 'jianshu', 'zhihu', 'list', 'history', 'detail', 'all', 'wechat-history']
+const collectTabIds = ['wechat', 'jianshu', 'zhihu', 'list', 'api-list', 'history', 'detail', 'all', 'wechat-history']
 
 function getTabFromUrl() {
   return new URLSearchParams(location.search).get('tab') || ''
@@ -186,6 +197,7 @@ const configOptions = ref([])
 
 const urls = reactive({ wechat: '', jianshu: '', zhihu: '', detail: '' })
 const listOptionId = ref(null)
+const apiOptionId = ref(null)
 const historyOptionId = ref(null)
 const historyPaging = ref('1-5')
 const detailOptionId = ref(null)
@@ -276,6 +288,7 @@ async function runCollect(id, extra) {
       case 'wechat': case 'jianshu': case 'zhihu':
         res = await collectCustom({ collect_urls: urls[id], collect_name: extra }); break
       case 'list': res = await collectList(extra); break
+      case 'api-list': res = await collectApiList(extra); break
       case 'history': res = await collectHistory(extra); break
       case 'detail': res = await collectDetail(extra); break
       case 'all': res = await collectAll(extra); break
