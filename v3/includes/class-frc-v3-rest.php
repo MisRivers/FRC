@@ -60,6 +60,9 @@ class FRC_V3_Rest
         register_rest_route($this->namespace, '/collect/list', [
             ['methods' => 'POST', 'callback' => [$this, 'collect_list'], 'permission_callback' => [$this, 'check_permission']],
         ]);
+        register_rest_route($this->namespace, '/collect/api-list', [
+            ['methods' => 'POST', 'callback' => [$this, 'collect_api_list'], 'permission_callback' => [$this, 'check_permission']],
+        ]);
         register_rest_route($this->namespace, '/collect/detail', [
             ['methods' => 'POST', 'callback' => [$this, 'collect_detail'], 'permission_callback' => [$this, 'check_permission']],
         ]);
@@ -263,6 +266,7 @@ class FRC_V3_Rest
         return rest_ensure_response(['code' => 200, 'data' => [
             'total'  => (int)$this->wpdb->get_var("SELECT COUNT(*) FROM `$t`"),
             'list'   => (int)$this->wpdb->get_var($this->wpdb->prepare("SELECT COUNT(*) FROM `$t` WHERE collect_type=%s", 'list')),
+            'api'    => (int)$this->wpdb->get_var($this->wpdb->prepare("SELECT COUNT(*) FROM `$t` WHERE collect_type=%s", 'api')),
             'single' => (int)$this->wpdb->get_var($this->wpdb->prepare("SELECT COUNT(*) FROM `$t` WHERE collect_type=%s", 'single')),
             'all'    => (int)$this->wpdb->get_var($this->wpdb->prepare("SELECT COUNT(*) FROM `$t` WHERE collect_type=%s", 'all')),
         ]]);
@@ -363,6 +367,11 @@ class FRC_V3_Rest
     {
         $_REQUEST['option_id'] = absint($request->get_param('option_id'));
         return $this->call_spider('grab_list_page');
+    }
+    public function collect_api_list($request)
+    {
+        $_REQUEST['option_id'] = absint($request->get_param('option_id'));
+        return $this->call_spider('grab_api_list_page');
     }
     public function collect_detail($request)
     {

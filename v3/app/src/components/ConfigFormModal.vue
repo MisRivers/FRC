@@ -19,6 +19,7 @@
           <el-form-item :label="$t('configForm.type')" prop="collect_type"><!-- 采集类型 -->
             <el-radio-group v-model="form.collect_type">
               <el-radio value="list">列表采集</el-radio>
+              <el-radio value="api">API列表采集</el-radio>
               <el-radio value="single">详情采集</el-radio>
               <el-radio value="all">全站采集</el-radio>
             </el-radio-group>
@@ -78,35 +79,39 @@
         </el-col>
       </el-row>
 
-      <!-- ========== 列表采集配置 ========== -->
-      <template v-if="form.collect_type === 'list'">
-        <el-divider content-position="left">{{ $t('configForm.listSection') }}<!-- 列表采集配置 --></el-divider>
+      <!-- ========== 列表/API采集配置 ========== -->
+      <template v-if="form.collect_type === 'list' || form.collect_type === 'api'">
+        <el-divider content-position="left">{{ form.collect_type === 'api' ? 'API列表采集配置' : $t('configForm.listSection') }}</el-divider>
         <el-form-item :label="$t('configForm.listUrl')" prop="collect_list_url"><!-- 列表采集地址 -->
-          <el-input v-model="form.collect_list_url" :placeholder="$t('configForm.listUrlPlaceholder')" /><!-- https://example.com/news/list_1.html -->
+          <el-input v-model="form.collect_list_url" :placeholder="form.collect_type === 'api' ? 'https://api.example.com/list?page=1' : $t('configForm.listUrlPlaceholder')" />
+          <span v-if="form.collect_type === 'api'" class="form-hint">API接口地址，返回JSON格式数据</span>
         </el-form-item>
-        <el-form-item :label="$t('configForm.pagingUrl')"><!-- 分页地址模板 -->
-          <el-input v-model="form.collect_list_url_paging" :placeholder="$t('configForm.pagingUrlPlaceholder')" /><!-- https://example.com/news/list_{page}.html -->
-          <span class="form-hint">{{ $t('configForm.pagingHint') }}<!-- {page} 会自动替换为页码 --></span>
-        </el-form-item>
+        <template v-if="form.collect_type === 'list'">
+          <el-form-item :label="$t('configForm.pagingUrl')"><!-- 分页地址模板 -->
+            <el-input v-model="form.collect_list_url_paging" :placeholder="$t('configForm.pagingUrlPlaceholder')" /><!-- https://example.com/news/list_{page}.html -->
+            <span class="form-hint">{{ $t('configForm.pagingHint') }}<!-- {page} 会自动替换为页码 --></span>
+          </el-form-item>
+        </template>
         <el-form-item :label="$t('configForm.listRange')" prop="collect_list_range"><!-- 列表采集范围 -->
-          <el-input v-model="form.collect_list_range" :placeholder="$t('configForm.listRangePlaceholder')" /><!-- .news-list ul li -->
-          <span class="form-hint">{{ $t('configForm.listRangeHint') }}<!-- CSS选择器，定位列表每一项 --></span>
+          <el-input v-model="form.collect_list_range" :placeholder="form.collect_type === 'api' ? 'data.list' : $t('configForm.listRangePlaceholder')" />
+          <span class="form-hint">{{ form.collect_type === 'api' ? 'JSON路径，如 data.items 或留空表示根数组' : $t('configForm.listRangeHint') }}</span>
         </el-form-item>
 
         <!-- 列表采集规则 - 结构化输入 -->
         <el-form-item :label="$t('configForm.listRules')" prop="collect_list_rules" class="rules-form-item"><!-- 列表采集规则 -->
           <div class="rule-header">
             <span class="rule-header-col rule-col-name">{{ $t('configForm.ruleName') }}<!-- 规则名 --></span>
-            <span class="rule-header-col rule-col-selector">{{ $t('configForm.selector') }}<!-- JQuery选择器 --></span>
+            <span class="rule-header-col rule-col-selector">{{ form.collect_type === 'api' ? '字段名' : $t('configForm.selector') }}</span>
             <span class="rule-header-col rule-col-attr">{{ $t('configForm.attribute') }}<!-- 属性 --></span>
             <span class="rule-header-col rule-col-filter">{{ $t('configForm.filter') }}<!-- 过滤 --></span>
           </div>
           <div class="rule-row">
             <el-input :model-value="listRule.name" disabled class="rule-col-name" />
-            <el-input v-model="listRule.selector" :placeholder="$t('configForm.selectorPlaceholder')" class="rule-col-selector" /><!-- .title -->
-            <el-input v-model="listRule.attribute" :placeholder="$t('configForm.attrPlaceholder')" class="rule-col-attr" /><!-- text -->
-            <el-input v-model="listRule.filter" :placeholder="$t('configForm.filterPlaceholder')" class="rule-col-filter" /><!-- -script -style -->
+            <el-input v-model="listRule.selector" :placeholder="form.collect_type === 'api' ? 'url' : $t('configForm.selectorPlaceholder')" class="rule-col-selector" />
+            <el-input v-model="listRule.attribute" :placeholder="form.collect_type === 'api' ? 'null' : $t('configForm.attrPlaceholder')" class="rule-col-attr" />
+            <el-input v-model="listRule.filter" :placeholder="form.collect_type === 'api' ? 'null' : $t('configForm.filterPlaceholder')" class="rule-col-filter" />
           </div>
+          <span v-if="form.collect_type === 'api'" class="form-hint">API模式下：字段名填JSON中的URL字段名（如 url），属性和过滤留空或填null</span>
         </el-form-item>
       </template>
 
@@ -298,7 +303,7 @@ function validateRulesNotEmpty() {
   const listEmpty = !listRule.selector.trim()
   const contentEmpty = contentRules.every(r => !r.selector.trim())
 
-  if (form.collect_type === 'list' && listEmpty) {
+  if ((form.collect_type === 'list' || form.collect_type === 'api') && listEmpty) {
     ElMessage.warning({ message: t('configForm.ruleRequired.listRules'), offset: 60 }) // 请填写列表采集规则
     ok = false
   }
