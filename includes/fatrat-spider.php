@@ -167,7 +167,9 @@ class FRC_Spider
 
         $apiUrl = $option['collect_list_url'];
         $jsonPath = $option['collect_list_range'];
-        $urlField = $option['collect_list_rules'];
+        $rulesStr = $option['collect_list_rules'];
+        
+        $urlField = $this->parseRulesForApi($rulesStr);
 
         $client = new \GuzzleHttp\Client([
             'timeout' => 30,
@@ -315,6 +317,41 @@ class FRC_Spider
         }
 
         return $urls;
+    }
+
+    /**
+     * 解析API列表采集的规则，获取字段名
+     * 支持格式: link%url 或 url 或 link%url|null|null
+     * @param $rules
+     * @return string
+     */
+    private function parseRulesForApi($rules)
+    {
+        if (empty($rules)) {
+            return '';
+        }
+        
+        $rules = trim($rules);
+        
+        $parts = explode(')(', $rules);
+        foreach ($parts as $part) {
+            $part = trim($part);
+            $segments = explode('|', $part);
+            $fieldName = trim($segments[0]);
+            
+            if (strpos($fieldName, '%') !== false) {
+                $fieldParts = explode('%', $fieldName);
+                if (count($fieldParts) >= 2) {
+                    return trim($fieldParts[1]);
+                }
+            }
+            
+            if (preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $fieldName)) {
+                return $fieldName;
+            }
+        }
+        
+        return $rules;
     }
 
 
